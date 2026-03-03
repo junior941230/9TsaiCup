@@ -3,8 +3,8 @@ import databaseSetup as db
 import pandas as pd
 password = st.secrets["PASSWORD"]
 userList = ["業誠","盧柏穎","林泓佐","李雨威","徐加成","陳亮均"]
-st.set_page_config(page_title="個人淨資產追蹤系統", layout="wide")
-st.title("個人淨資產追蹤 (單位淨值法)")
+st.set_page_config(page_title="2026韭菜杯大賽", layout="wide")
+st.title("2026韭菜杯大賽 - 資產追蹤系統")
 
 cumulativeReturns = {}
 for user in userList:
@@ -86,3 +86,9 @@ if st.button("新增資料"):
         addDATA()
     else:
         st.error("密碼錯誤，無法新增資料。")
+
+col1, col2= st.columns([0.3,0.7])
+with col1:
+    st.image("icon/1.png", width=200)
+with col2:
+    st.image("icon/2.png", width=200)
