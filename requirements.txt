@@ -1,4 +1,4 @@
 pandas
 pymongo
 dnspython
-streamlit
+streamlit ==  1.37.1
