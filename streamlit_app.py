@@ -1,9 +1,38 @@
 import streamlit as st
 import databaseSetup as db
 import pandas as pd
+import FinMindApi
+import datetime
+
+st.set_page_config(page_title="2026韭菜杯大賽", layout="wide")
+
+if 'latestUpdateDate' not in st.session_state:
+    st.session_state['latestUpdateDate'] = None
+if 'price0050Now' not in st.session_state:
+    st.session_state['price0050Now'] = None
+if 'priceTAIEXNow' not in st.session_state:
+    st.session_state['priceTAIEXNow'] = None
+if 'history0050Datas' not in st.session_state:
+    st.session_state['history0050Datas'] = None
+if 'historyTAIEXDatas' not in st.session_state:
+    st.session_state['historyTAIEXDatas'] = None
+
 password = st.secrets["PASSWORD"]
 userList = ["業誠","盧柏穎","林泓佐","李雨威","徐加成","陳亮均"]
-st.set_page_config(page_title="2026韭菜杯大賽", layout="wide")
+fm = FinMindApi.FinMindApi()
+@st.cache_data
+def loadStartData():
+    price0050Start, priceTAIEXStart = fm.getStartDayPrice()
+    return price0050Start, priceTAIEXStart
+
+price0050Start, priceTAIEXStart = loadStartData()
+
+if st.session_state['latestUpdateDate'] is None or st.session_state['latestUpdateDate'] < datetime.date.today().strftime("%Y-%m-%d"):
+    st.session_state['latestUpdateDate'] = datetime.date.today().strftime("%Y-%m-%d")
+    st.session_state['price0050Now'], st.session_state['priceTAIEXNow'] = fm.getNowPrice()
+    st.session_state['history0050Datas'] = fm.getHistoryData("0050")
+    st.session_state['historyTAIEXDatas'] = fm.getHistoryData("TAIEX")
+
 st.title("2026韭菜杯大賽 - 資產追蹤系統")
 
 cumulativeReturns = {}
@@ -11,50 +40,59 @@ for user in userList:
     cumulativeReturn, delta = db.getCumulativeReturn(user)
     cumulativeReturns[user] = cumulativeReturn
 cumulativeReturns = dict(sorted(cumulativeReturns.items(), key=lambda item: item[1], reverse=True))
+col1, col2 = st.columns(2)
+with col1:
+    sparklineData = st.session_state['historyTAIEXDatas']["close"].tolist()
+    delta = (st.session_state['priceTAIEXNow'] - priceTAIEXStart) / priceTAIEXStart * 100
+    st.metric("TAIEX", f"{st.session_state['priceTAIEXNow']}" ,delta= f"{delta:.2f}% 比賽日至今", chart_data=sparklineData, chart_type="line", border=True)
+with col2:
+    sparklineData = st.session_state['history0050Datas']["close"].tolist()
+    delta = (st.session_state['price0050Now'] - price0050Start) / price0050Start * 100
+    st.metric("0050", f"{st.session_state['price0050Now']} NTD" ,delta= f"{delta:.2f}% 比賽日至今", chart_data=sparklineData, chart_type="line", border=True)
+with st.container(border=True):
+    for i, user in enumerate(cumulativeReturns.keys()):
+        with st.container(border=True):
+            colIcon, colTitle= st.columns([0.01,0.5])
+            if i == 0:
+                colIcon.image("icon/gold.png", width=40)
+            elif i == 1:
+                colIcon.image("icon/silver.png", width=40)
+            elif i == 2:
+                colIcon.image("icon/bronze.png", width=40)
+            elif i == 5:
+                colIcon.image("icon/poop.png", width=40)
 
-for i, user in enumerate(cumulativeReturns.keys()):
-    with st.container(border=True):
-        colIcon, colTitle= st.columns([0.01,0.5])
-        if i == 0:
-            colIcon.image("icon/gold.png", width=40)
-        elif i == 1:
-            colIcon.image("icon/silver.png", width=40)
-        elif i == 2:
-            colIcon.image("icon/bronze.png", width=40)
-        elif i == 5:
-            colIcon.image("icon/poop.png", width=40)
+            colTitle.write(f"### {user} 選手")
+            # 取得最新資訊
+            latestInfo = db.getLatestNavInfo(user)
+            dfHistory = db.getNavHistoryDf(user)
+            cumulativeReturn, delta = db.getCumulativeReturn(user)
+            # 顯示關鍵指標
+            col1, col2, col3,col4 = st.columns(4)
+            with col1:
+                st.metric("當前總資產", f"${latestInfo['totalValue']:,.0f}")
+            with col2:
+                st.metric("報酬率", f"{cumulativeReturn:.2f}%", f"{delta:.2f}%")
+            with col3:
+                navDelta = 0
+                if len(dfHistory) >= 2:
+                    navDelta = latestInfo['nav'] - dfHistory.iloc[-2]['nav']
+                st.metric("最新單位淨值", f"{latestInfo['nav']:.4f}", f"{navDelta:.4f}")
+            with col4:  
+                with st.popover("更多資訊"):
+                    st.metric("當前總單位數", f"{latestInfo['totalUnits']:,.2f}")
+                    st.divider()
+                    st.subheader("淨值走勢圖 (真實投資績效)")
+                    if not dfHistory.empty:
+                        dfHistory['date'] = pd.to_datetime(dfHistory['date']).dt.strftime('%Y-%m-%d')
+                        dfChart = dfHistory.set_index('date')
+                        st.line_chart(dfChart['nav'])
+                    else:
+                        st.info("目前還沒有資料，請在左側更新您的第一筆資產。")
 
-        colTitle.write(f"### {user} 選手")
-        # 取得最新資訊
-        latestInfo = db.getLatestNavInfo(user)
-        dfHistory = db.getNavHistoryDf(user)
-        cumulativeReturn, delta = db.getCumulativeReturn(user)
-        # 顯示關鍵指標
-        col1, col2, col3,col4 = st.columns(4)
-        with col1:
-            st.metric("當前總資產", f"${latestInfo['totalValue']:,.0f}")
-        with col2:
-            st.metric("報酬率", f"{cumulativeReturn:.2f}%", f"{delta:.2f}%")
-        with col3:
-            navDelta = 0
-            if len(dfHistory) >= 2:
-                navDelta = latestInfo['nav'] - dfHistory.iloc[-2]['nav']
-            st.metric("最新單位淨值", f"{latestInfo['nav']:.4f}", f"{navDelta:.4f}")
-        with col4:
-            with st.popover("更多資訊"):
-                st.metric("當前總單位數", f"{latestInfo['totalUnits']:,.2f}")
-                st.divider()
-                st.subheader("淨值走勢圖 (真實投資績效)")
-                if not dfHistory.empty:
-                    dfHistory['date'] = pd.to_datetime(dfHistory['date']).dt.strftime('%Y-%m-%d')
-                    dfChart = dfHistory.set_index('date')
-                    st.line_chart(dfChart['nav'])
-                else:
-                    st.info("目前還沒有資料，請在左側更新您的第一筆資產。")
-
-                st.subheader("總資產成長走勢圖")
-                if not dfHistory.empty:
-                    st.bar_chart(dfChart['totalValue'])
+                    st.subheader("總資產成長走勢圖")
+                    if not dfHistory.empty:
+                        st.bar_chart(dfChart['totalValue'])
 
 
         

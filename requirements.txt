@@ -1,5 +1,6 @@
 pandas
 pymongo[srv]
 dnspython
-streamlit ==  1.37.1
+streamlit ==  1.55.0
 FinMind
+tqdm
