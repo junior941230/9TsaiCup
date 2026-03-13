@@ -4,22 +4,23 @@ from pymongo import MongoClient
 import certifi
 import streamlit as st
 
-# 取得連線設定
-mongoUri = st.secrets["MONGO_URI"]
-dbName = st.secrets["DB_NAME"]
+# 使用 cache_resource 確保連線物件在整個 Session 中只建立一次
+@st.cache_resource
+def getMongoClient():
+    mongoUri = st.secrets["MONGO_URI"]
+    return MongoClient(mongoUri, tlsCAFile=certifi.where())
 
-# 建立連線
-client = MongoClient(mongoUri, tlsCAFile=certifi.where())
-db = client[dbName]
+client = getMongoClient()
+db = client[st.secrets["DB_NAME"]]
 
-# 指定 Collection (集合)
 assetsDetailCol = db['assetsDetail']
 capitalFlowCol = db['capitalFlow']
 navHistoryCol = db['navHistory']
 
+# 使用 cache_data 快取查詢結果
+@st.cache_data(ttl=600)
 def getLatestNavInfo(userId):
     """取得特定使用者最新的淨值、總單位數、總價值"""
-    # 依據 date 降序排列，取最新一筆
     latestRecord = navHistoryCol.find_one({'userId': userId}, sort=[('date', -1)])
     
     if not latestRecord:
@@ -30,13 +31,21 @@ def getLatestNavInfo(userId):
         'nav': latestRecord['nav']
     }
 
-def updateAssetsAndNav(userId, newAssetData, flowAmount):
+@st.cache_data(ttl=600)
+def getNavHistoryDf(userId):
+    """取得特定使用者的歷史淨值 DataFrame"""
+    cursor = navHistoryCol.find({'userId': userId}, {'_id': 0, 'date': 1, 'nav': 1, 'totalValue': 1}).sort('date', 1)
+    records = list(cursor)
+    if not records:
+        return pd.DataFrame(columns=['date', 'nav', 'totalValue'])
+    return pd.DataFrame(records)
+
+def updateAssetsAndNav(date,userId ,newAssetData, flowAmount):
     """
     userId: 區別不同使用者的 ID
     newAssetData: [{'name': '現金', 'value': 50000}, ...]
     flowAmount: 存入為正，領出為負。若只有市值變動則為 0。
     """
-    currentDate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 1. 計算當前總價值
     newTotalValue = sum(item['value'] for item in newAssetData)
@@ -68,7 +77,7 @@ def updateAssetsAndNav(userId, newAssetData, flowAmount):
     for item in newAssetData:
         assetsDetailCol.insert_one({
             'userId': userId,
-            'date': currentDate,
+            'date': date,
             'value': item['value']
         })
     
@@ -76,26 +85,21 @@ def updateAssetsAndNav(userId, newAssetData, flowAmount):
     if flowAmount != 0:
         capitalFlowCol.insert_one({
             'userId': userId,
-            'date': currentDate,
+            'date': date,
             'flowAmount': flowAmount
         })
 
     # 寫入淨值歷史
     navHistoryCol.insert_one({
         'userId': userId,
-        'date': currentDate,
+        'date': date,
         'totalValue': newTotalValue,
         'totalUnits': newUnits,
         'nav': newNav
     })
+    st.cache_data.clear() 
+    st.success("資料已成功更新並重新整理快取")
 
-def getNavHistoryDf(userId):
-    """取得特定使用者的歷史淨值 DataFrame"""
-    cursor = navHistoryCol.find({'userId': userId}, {'_id': 0, 'date': 1, 'nav': 1, 'totalValue': 1}).sort('date', 1)
-    records = list(cursor)
-    if not records:
-        return pd.DataFrame(columns=['date', 'nav', 'totalValue'])
-    return pd.DataFrame(records)
 
 def getCumulativeReturn(userId):
     """計算特定使用者的總報酬率"""

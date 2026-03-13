@@ -1,65 +1,77 @@
 from FinMind.data import DataLoader
 import streamlit as st
 import datetime
+import pandas as pd
+
 class FinMindApi:
     def __init__(self):
-        token = st.secrets["FINMINDTOKEN"]
+        # 建議在進入點使用 st.cache_resource 呼叫，避免重複登入
+        self.token = st.secrets["FINMINDTOKEN"]
         self.api = DataLoader()
-        self.api.login_by_token(api_token=token)
+        self.api.login_by_token(api_token=self.token)
+        self.startDate = '2026-03-03'
 
-    def getStartDayPrice(self):
-        df = self.api.taiwan_stock_daily(
-            stock_id='0050',
-            start_date='2026-03-03',
-        )
-        price0050Start = df["close"].values[0]
-        df = self.api.taiwan_stock_daily(
-            stock_id="TAIEX", 
-            start_date='2026-03-03'
-        )
-        priceTAIEXStart = df["close"].values[0]
-        
-        return price0050Start, priceTAIEXStart
-    
     def getAdjustedDate(self):
+        """計算符合台股交易時間的最新日期"""
         currentTime = datetime.datetime.now()
         adjustedDate = currentTime.date()
         
-        # 設定時間基準點為 1:30 (若你的 1.30 指的是下午 1:30，請將參數改為 13, 30)
-        targetTime = datetime.time(1, 30)
+        # 台股收盤時間基準點 13:30
+        targetTime = datetime.time(13, 30)
         
-        # 條件一：如果還沒到當天的 1:30，日期減去一天變成昨天
+        # 尚未收盤則看前一天
         if currentTime.time() < targetTime:
             adjustedDate -= datetime.timedelta(days=1)
             
-        # 條件二：如果是假日，則退回上一個工作日 (星期五)
-        # weekday() 回傳值：0 是星期一 ... 5 是星期六，6 是星期日
-        if adjustedDate.weekday() == 5:
+        # 處理假日（退回上一個週五）
+        if adjustedDate.weekday() == 5:  # 星期六
             adjustedDate -= datetime.timedelta(days=1)
-        elif adjustedDate.weekday() == 6:
+        elif adjustedDate.weekday() == 6:  # 星期日
             adjustedDate -= datetime.timedelta(days=2)
             
         return adjustedDate.strftime("%Y-%m-%d")
 
-    def getNowPrice(self):
-        today = self.getAdjustedDate()
-        df = self.api.taiwan_stock_daily(
+    def getStartDayPrice(self):
+        """取得比賽起始日的價格"""
+        # 0050
+        df0050 = self.api.taiwan_stock_daily(
             stock_id='0050',
-            start_date=today,
+            start_date=self.startDate,
+            end_date=self.startDate
         )
-        price0050Now = df.tail(1)["close"].values[0]
-        df = self.api.taiwan_stock_daily(
-            stock_id='TAIEX',
-            start_date=today,
+        # TAIEX
+        dfTaiex = self.api.taiwan_stock_daily(
+            stock_id="TAIEX", 
+            start_date=self.startDate,
+            end_date=self.startDate
         )
-        priceTAIEXNow = df.tail(1)["close"].values[0]
-        return price0050Now, priceTAIEXNow
+        
+        # 若當天剛好沒資料（如遇假日），改抓起始日後第一筆
+        price0050Start = df0050["close"].values[0] if not df0050.empty else 0
+        priceTaiexStart = dfTaiex["close"].values[0] if not dfTaiex.empty else 0
+        
+        return price0050Start, priceTaiexStart
     
-    def getHistoryData(self, stock_id):
+    def getNowPrice(self):
+        """取得最新的收盤價格"""
+        today = self.getAdjustedDate()
+        
+        # 抓取最近期的資料
+        df0050 = self.api.taiwan_stock_daily(stock_id='0050', start_date=today)
+        dfTaiex = self.api.taiwan_stock_daily(stock_id='TAIEX', start_date=today)
+        
+        # 取得最後一筆成交價
+        price0050Now = df0050.iloc[-1]["close"] if not df0050.empty else 0
+        priceTaiexNow = dfTaiex.iloc[-1]["close"] if not dfTaiex.empty else 0
+        
+        return price0050Now, priceTaiexNow
+    
+    def getHistoryData(self, stockId):
+        """取得比賽至今的歷史走勢"""
         today = self.getAdjustedDate()
         df = self.api.taiwan_stock_daily(
-            stock_id=stock_id,
-            start_date='2026-03-03',
+            stock_id=stockId,
+            start_date=self.startDate,
             end_date=today
         )
         return df
