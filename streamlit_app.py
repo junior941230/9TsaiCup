@@ -46,6 +46,7 @@ with col2:
 
 # --- 選手排行榜計算 ---
 userPerformance = []
+
 for user in userList:
     cReturn, delta = db.getCumulativeReturn(user)
     userPerformance.append({"name": user, "return": cReturn, "delta": delta})
@@ -56,7 +57,7 @@ userPerformance.sort(key=lambda x: x["return"], reverse=True)
 # --- 選手列表顯示 ---
 st.subheader("選手即時戰況")
 icons = {0: "icon/gold.png", 1: "icon/silver.png", 2: "icon/bronze.png", 5: "icon/poop.png"}
-
+userListCorrect = ["葉誠","盧柏穎","林泓佐","李雨威","徐加城","陳亮均"]
 with st.container(border=True):
     for i, p in enumerate(userPerformance):
         user = p["name"]
@@ -65,7 +66,7 @@ with st.container(border=True):
             if i in icons:
                 colIcon.image(icons[i], width=40)
 
-            colTitle.markdown(f"### 第 {i+1} 名：{user} 選手")
+            colTitle.markdown(f"### 第 {i+1} 名：{userListCorrect[userList.index(user)]} 選手")
             # 取得最新資訊
             latestInfo = db.getLatestNavInfo(user)
             dfHistory = db.getNavHistoryDf(user)
@@ -106,7 +107,8 @@ def addDATA():
     date = st.date_input("資料日期", value=datetime.date.today())
     date = date.strftime("%Y-%m-%d %H:%M:%S")
     st.subheader("2. 選擇使用者")
-    currentUser = st.selectbox("使用者代號", options=userList)
+    userListAdd = ["選擇使用者"] + userList
+    currentUser = st.selectbox("使用者代號", options=userListAdd)
     st.subheader("3. 資金進出")
     st.caption("是否有存入新資金，或領出資金？(若無請維持 0)")
     flowAmount = st.number_input("資金異動 (存入為正，領出為負)", value=0.0, step=1000.0)
@@ -116,6 +118,9 @@ def addDATA():
     value = st.number_input("現金/存款", min_value=0.0, value=0.0, step=1000.0)
 
     if st.button("更新資料"):
+        if currentUser == "選擇使用者":
+            st.error("請選擇一位使用者。")
+            return
         newAssets = [
             {'name': '總值', 'value': value},
         ]
